@@ -6,7 +6,7 @@
 #include <PubSubClient.h>
 #include <LiquidCrystal.h>
 
-LiquidCrystal lcd(3, 4, 5, 6, 7, 8);
+LiquidCrystal lcd(2, 4, 5, 6, 7, 8);
 WiFiEspClient espClient;
 PubSubClient client(espClient);
 SoftwareSerial ESPserial(10, 11); // RX | TX
@@ -50,7 +50,7 @@ void showOnDisplay(String firstRow, String secondRow, bool clearAll = false) {
 }
 
 void setup() {
-  analogWrite(2, 75);
+  analogWrite(3, 75);
   lcd.begin(16, 2);
   showOnDisplay("RTS | IBU", "Amel Spahic", false);
   initWiFi();
