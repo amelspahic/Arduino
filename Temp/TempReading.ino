@@ -4,29 +4,57 @@
 #include <WiFiEspUdp.h>
 #include <SoftwareSerial.h>
 #include <PubSubClient.h>
+#include <LiquidCrystal.h>
 
+LiquidCrystal lcd(3, 4, 5, 6, 7, 8);
 WiFiEspClient espClient;
 PubSubClient client(espClient);
 SoftwareSerial ESPserial(10, 11); // RX | TX
 
-#define WIFI_AP "Amel"
+#define WIFI_AP "NKCelik"
 #define WIFI_PASSWORD "RijesiZadataK!"
 
 int status = WL_IDLE_STATUS;
-const int TEMP_PIN = A2;  /* LM35 O/P pin */
+const int TEMP_PIN = A2;
 const int READINGS_PER_MIN = 60;
-//unsigned long lastSend;
 
 const char* mqttServer = "farmer.cloudmqtt.com";
 const int mqttPort = 13691;
 const char* mqttUser = "ogsoispv";
 const char* mqttPassword = "Udp8SAfuevEN";
 
+float averageTemp;
+
+void showOnDisplay(String firstRow, String secondRow, bool clearAll = false) {
+  if (clearAll) {
+    lcd.clear();
+  }
+
+  if (firstRow.length() > 0) {
+    lcd.setCursor(0, 0);
+    for (int i = 0; i < 16; i++) {
+      lcd.print(" ");
+    }
+    lcd.setCursor(0,0);
+    lcd.print(firstRow);
+  }
+
+  if (secondRow.length() > 0) {
+    lcd.setCursor(0, 1);
+    for (int i = 0; i < 16; i++) {
+      lcd.print(" ");
+    }
+    lcd.setCursor(0,1);
+    lcd.print(secondRow);
+  }
+}
+
 void setup() {
-  Serial.begin(9600);
+  analogWrite(2, 75);
+  lcd.begin(16, 2);
+  showOnDisplay("RTS | IBU", "Amel Spahic", false);
   initWiFi();
   client.setServer(mqttServer, mqttPort);
-  //  lastSend = 0;
 }
 
 void loop() {
@@ -36,39 +64,40 @@ void loop() {
     reconnect();
   }
 
-  // Zadatak semplovanja
+  // Task: Getting temp samples
   float allReadings = getTemperatureReadings();
 
-  // Zadatak usrednjavanja
+  // Task: Find average
   float average = getAverage(allReadings);
 
-  // Zadatak prikaza
+  // Task: Printing and publishing
   publishResults(average);
 
   client.loop();
 }
 
+// Getting average value
 float getAverage(float total) {
   return total / READINGS_PER_MIN;
 }
 
+
 float getTemperatureReadings() {
-  Serial.println("Measuring...");
+  showOnDisplay("Measuring avg...", "");
+
+  // Getting delay base on readings per minute (60000 ms in 1 minute divided by readings per minute)
   int delayMs = 60000 / READINGS_PER_MIN;
   int counter = 0;
 
   float totalTemp = 0;
 
+  // We will reading temperature based on readings per minute
   while (counter < READINGS_PER_MIN) {
     int tempAdcVal = analogRead(TEMP_PIN);
-    float tempVal = (tempAdcVal * 4.88);
-    tempVal = (tempVal / 10);
-    totalTemp = totalTemp + tempVal;
-
-    // Prikaz na displeju
-    Serial.print("Trenutna: ");
-    Serial.println(tempVal);
-
+    float tempVal = (tempAdcVal * 4.88); // Since we are providing 5V == 5.000 mV divided by converted digital reading of voltage 1024)
+    tempVal = (tempVal / 10); // LM35 cheatsheet - every 1 C degree is 10mV
+    totalTemp = totalTemp + tempVal; // Getting total temperature value for 1 minute
+    showOnDisplay("", "Current: " + String(tempVal));
     counter++;
     delay(delayMs);
   }
@@ -80,41 +109,37 @@ void checkWifiStatusAndConnect() {
   status = WiFi.status();
   if (status != WL_CONNECTED) {
     while (status != WL_CONNECTED) {
-      Serial.print("Connecting to AP: ");
-      Serial.println(WIFI_AP);
-      WiFi.mode(WIFI_STA);
+      showOnDisplay("Connecting to", WIFI_AP, true);
       status = WiFi.begin(WIFI_AP, WIFI_PASSWORD);
+      // Wait a bit
       delay(500);
     }
-    Serial.println("Connected to WIFI");
+    showOnDisplay("Connected to:", WIFI_AP, true);
   }
 }
 
 void publishResults(float average) {
   char result[8];
   dtostrf(average, 6, 2, result);
-
-  // Prikaz na displeju
-  Serial.print("Prosječna: ");
-  Serial.println(average);
+  showOnDisplay("Average: " + String(average), "", false);
 
   if (!client.connected()) {
     reconnect();
   }
 
-  client.publish("average_temperature", result);
+  // Topic on which we will subscribe
+  client.publish("arduino/rts/temperature", result);
 }
 
 // If not connected, try every 5 seconds
 void reconnect() {
   while (!client.connected()) {
-    Serial.print("Connecting to MQTT ...");
+    showOnDisplay("", "Connecting MQTT");
     if (client.connect("ArduinoSensor", mqttUser, mqttPassword) ) {
-      Serial.println( "[CONNECTED]" );
+      showOnDisplay("", "CONNECTED MQTT");
     } else {
-      Serial.print("[FAILED] [ state = ");
-      Serial.print(client.state());
-      Serial.println(" : retrying in 5 seconds]");
+      showOnDisplay("", "FAILED");
+      showOnDisplay("", "RETRYING IN 5 s");
       delay(5000);
     }
   }
@@ -122,25 +147,17 @@ void reconnect() {
 
 void initWiFi()
 {
-  // initialize serial for ESP module
   ESPserial.begin(9600);
-  // initialize ESP module
   WiFi.init(&ESPserial);
-  // check for the presence of the shield
   if (WiFi.status() == WL_NO_SHIELD) {
-    Serial.println("WiFi shield not present");
-    // don't continue
+    showOnDisplay("WiFi shield", "not present", true);
     while (true);
   }
 
-  Serial.println("Connecting to AP ...");
-  // attempt to connect to WiFi network
+  showOnDisplay("Connecting WiFi", WIFI_AP, true);
   while ( status != WL_CONNECTED) {
-    Serial.print("Attempting to connect to WPA SSID: ");
-    Serial.println(WIFI_AP);
-    // Connect to WPA/WPA2 network
     status = WiFi.begin(WIFI_AP, WIFI_PASSWORD);
     delay(500);
   }
-  Serial.println("Connected to AP");
+  showOnDisplay("Connected to", WIFI_AP, true);
 }
